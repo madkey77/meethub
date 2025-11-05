@@ -1,0 +1,64 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Timeline Artifact Schema",
+  "description": "Chronological sequence of events extracted from documents",
+  "type": "object",
+  "properties": {
+    "events": {
+      "type": "array",
+      "description": "Chronologically ordered events",
+      "items": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Event timestamp"
+          },
+          "event": {
+            "type": "string",
+            "description": "What happened"
+          },
+          "participants": {
+            "type": "array",
+            "description": "People or entities involved",
+            "items": {
+              "type": "string"
+            }
+          },
+          "category": {
+            "type": "string",
+            "enum": ["decision", "action", "milestone", "discussion", "other"],
+            "description": "Event type"
+          },
+          "source_location": {
+            "type": "string",
+            "description": "File path and location reference"
+          }
+        },
+        "required": ["date", "event"]
+      }
+    },
+    "start_date": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Earliest event date"
+    },
+    "end_date": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Latest event date"
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "source_files": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": ["events", "generated_at", "source_files"]
+}

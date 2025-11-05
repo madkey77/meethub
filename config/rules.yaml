@@ -1,0 +1,65 @@
+# Artifact Generation Rules
+# This file defines which artifacts to generate for different file types
+
+artifact_generation_rules:
+  # Rule for meeting transcripts
+  - name: "meeting-artifacts"
+    match_criteria:
+      source_type: "meeting"
+      mime_types: ["application/json", "text/plain"]
+
+    processing_steps:
+      - step: "generate_artifacts"
+        artifacts:
+          # Meeting summary using OpenAI
+          - kind: "summary"
+            generator: "SummaryGenerator"
+            llm_provider: "openai"
+            llm_model: "gpt-4o"
+            prompt_template: "meeting_summary.txt"
+
+          # Extract decisions using Anthropic
+          - kind: "decisions_index"
+            generator: "DecisionsGenerator"
+            llm_provider: "anthropic"
+            llm_model: "claude-3-5-sonnet-20241022"
+            prompt_template: "meeting_decisions.txt"
+
+          # Extract entities and people mentioned
+          - kind: "entities_index"
+            generator: "EntitiesGenerator"
+            llm_provider: "openai"
+            llm_model: "gpt-4o"
+            prompt_template: "meeting_entities.txt"
+
+  # Rule for uploaded documents (PDFs, DOCX)
+  - name: "document-artifacts"
+    match_criteria:
+      source_type: "upload"
+      mime_types: ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"]
+
+    processing_steps:
+      - step: "generate_artifacts"
+        artifacts:
+          # Document summary
+          - kind: "summary"
+            generator: "SummaryGenerator"
+            llm_provider: "openai"
+            llm_model: "gpt-4o-mini"  # Use mini for documents to save costs
+            prompt_template: "document_summary.txt"
+
+  # Rule for markdown files
+  - name: "markdown-artifacts"
+    match_criteria:
+      source_type: "upload"
+      mime_types: ["text/markdown", "text/plain"]
+      path_patterns: ["*.md", "*.txt"]
+
+    processing_steps:
+      - step: "generate_artifacts"
+        artifacts:
+          - kind: "summary"
+            generator: "SummaryGenerator"
+            llm_provider: "openai"
+            llm_model: "gpt-4o-mini"
+            prompt_template: "document_summary.txt"

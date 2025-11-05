@@ -1,0 +1,65 @@
+# Google APIs
+google-api-python-client>=2.100.0
+google-auth>=2.23.0
+google-auth-httplib2>=0.1.1
+google-auth-oauthlib>=1.1.0
+requests>=2.31.0
+
+# Transcription
+deepgram-sdk>=3.0.0
+
+# Database
+sqlalchemy>=2.0.0
+alembic>=1.12.0
+
+# Scheduling
+apscheduler>=3.10.0
+
+# Configuration & Validation
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+python-dotenv>=1.0.0
+
+# HTTP Client
+httpx>=0.25.0
+
+# Logging
+structlog>=23.2.0
+python-json-logger>=2.0.7
+
+# Testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-mock>=3.12.0
+pytest-cov>=4.1.0
+
+# CLI
+click>=8.1.0
+
+# Development
+black>=23.0.0
+ruff>=0.1.0
+mypy>=1.7.0
+
+# NEW: RAG & LLM Infrastructure
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+chromadb>=0.4.22
+langchain>=0.1.10
+langchain-community>=0.0.20
+openai>=1.12.0
+anthropic>=0.25.0
+streamlit>=1.32.0
+
+# NEW: Document Processing
+pymupdf>=1.23.0  # PDF text extraction (fitz)
+python-docx>=1.1.0  # DOCX processing
+pytesseract>=0.3.10  # OCR for scanned PDFs (optional)
+pillow>=10.0.0  # Image processing for OCR
+python-magic>=0.4.27  # MIME type detection (optional, fallback to mimetypes)
+chardet>=5.0.0  # Encoding detection for text files
+jmespath>=1.0.1  # JSON path expressions for chat exports
+
+# NEW: Vector & Embeddings
+numpy>=1.24.0
+tiktoken>=0.5.0  # Token counting for OpenAI

@@ -1,0 +1,29 @@
+You are analyzing the following {source_type} content to extract a comprehensive summary.
+
+Content:
+{content}
+
+Additional metadata (if available):
+{metadata}
+
+Instructions:
+1. Extract a concise but comprehensive summary of the main topics discussed
+2. Identify 3-7 key points or takeaways
+3. If this is a meeting, identify participants mentioned in the content
+4. Respond ONLY with valid JSON (no markdown, no explanations)
+
+Required JSON format:
+{{
+  "summary": "A brief overview of the content in 2-3 sentences",
+  "key_points": [
+    "First key point or decision",
+    "Second key point or insight",
+    "Additional key points..."
+  ],
+  "participants": [
+    "Person 1 Name",
+    "Person 2 Name"
+  ]
+}}
+
+Note: If this is not a meeting or no participants are mentioned, set "participants" to an empty array.

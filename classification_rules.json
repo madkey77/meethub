@@ -1,0 +1,23 @@
+{
+  "rules": [
+    {
+      "project": "VNO",
+      "type": "title_prefix",
+      "pattern": "[VNO]",
+      "priority": 1
+    },
+    {
+      "project": "CLIENTE_X",
+      "type": "participant_domain",
+      "pattern": "@cliente.com",
+      "priority": 2
+    },
+    {
+      "project": "NOVOS_CLIENTES",
+      "type": "keyword",
+      "pattern": "kickoff|onboarding",
+      "priority": 3
+    }
+  ],
+  "default": "OUTROS"
+}

@@ -1,0 +1,54 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Decisions Index Artifact Schema",
+  "description": "Structured index of decisions made in documents or meetings",
+  "type": "object",
+  "properties": {
+    "decisions": {
+      "type": "array",
+      "description": "List of identified decisions",
+      "items": {
+        "type": "object",
+        "properties": {
+          "decision": {
+            "type": "string",
+            "description": "What was decided"
+          },
+          "decisor": {
+            "type": "string",
+            "description": "Who made the decision (person, team, or role)"
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "description": "When the decision was made"
+          },
+          "justification": {
+            "type": "string",
+            "description": "Rationale or reasoning for the decision"
+          },
+          "context": {
+            "type": "string",
+            "description": "Additional context or circumstances"
+          },
+          "source_location": {
+            "type": "string",
+            "description": "File path and location reference"
+          }
+        },
+        "required": ["decision", "decisor", "date"]
+      }
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "source_files": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": ["decisions", "generated_at", "source_files"]
+}

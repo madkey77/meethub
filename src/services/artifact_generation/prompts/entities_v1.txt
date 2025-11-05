@@ -1,0 +1,40 @@
+You are analyzing the following {source_type} content to extract entities (people, teams, organizations).
+
+Content:
+{content}
+
+Additional metadata (if available):
+{metadata}
+
+Instructions:
+1. Identify all people, teams, and organizations mentioned
+2. For each entity, determine the type: "person", "team", or "organization"
+3. Provide context about how the entity was mentioned or their role
+4. Count how many times each entity is mentioned (approximate if unclear)
+5. Respond ONLY with valid JSON (no markdown, no explanations)
+
+Required JSON format:
+{{
+  "entities": [
+    {{
+      "name": "Alice Johnson",
+      "type": "person",
+      "context": "mentioned as project lead for Q4 planning",
+      "mentions": 5
+    }},
+    {{
+      "name": "Engineering Team",
+      "type": "team",
+      "context": "responsible for backend implementation",
+      "mentions": 3
+    }},
+    {{
+      "name": "Acme Corporation",
+      "type": "organization",
+      "context": "client for the new project",
+      "mentions": 2
+    }}
+  ]
+}}
+
+Note: Use proper capitalization for names. If no entities are found, return an empty array.

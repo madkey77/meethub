@@ -1,0 +1,71 @@
+# Git
+.git/
+.gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment (will be mounted)
+.env
+.env.local
+
+# Database (will be mounted)
+*.db
+*.sqlite
+*.sqlite3
+data/
+
+# Logs (will be mounted)
+*.log
+logs/
+
+# Temporary Files
+tmp/
+temp/
+*.tmp
+
+# Test Files
+tests/
+.tox/
+.nox/
+
+# Documentation
+*.md
+docs/
+specs/
+.specify/
+.claude/
+CLAUDE.md
+meetinghub-contexto-ia.md
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# Docker
+docker-compose.yml
+Dockerfile
+.dockerignore
