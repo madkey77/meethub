@@ -1,0 +1,65 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Summary Artifact Schema",
+  "description": "Structured summary of document content",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "Document or meeting title"
+    },
+    "date": {
+      "type": "string",
+      "format": "date",
+      "description": "Document date or meeting date"
+    },
+    "key_points": {
+      "type": "array",
+      "description": "Main points or topics discussed",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "participants": {
+      "type": "array",
+      "description": "People involved (for meetings) or authors (for documents)",
+      "items": {
+        "type": "string"
+      }
+    },
+    "action_items": {
+      "type": "array",
+      "description": "Tasks or next steps identified",
+      "items": {
+        "type": "object",
+        "properties": {
+          "description": { "type": "string" },
+          "assignee": { "type": "string" },
+          "due_date": { "type": "string", "format": "date" }
+        },
+        "required": ["description"]
+      }
+    },
+    "tags": {
+      "type": "array",
+      "description": "Topic tags or categories",
+      "items": {
+        "type": "string"
+      }
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Timestamp when summary was generated"
+    },
+    "source_files": {
+      "type": "array",
+      "description": "Source file paths",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": ["key_points", "generated_at", "source_files"]
+}

@@ -1,0 +1,98 @@
+# JSON Schema for Processing Rules Configuration (rules.yaml)
+$schema: "http://json-schema.org/draft-07/schema#"
+title: Processing Rules Configuration Schema
+description: Declarative rules for file ingestion and artifact generation
+
+type: object
+properties:
+  rules:
+    type: array
+    description: List of processing rules
+    items:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Unique rule identifier
+          pattern: "^[a-zA-Z0-9_-]+$"
+
+        matchers:
+          type: object
+          description: Criteria for matching files to this rule
+          properties:
+            path_glob:
+              type: string
+              description: Glob pattern for file paths (e.g., "ingest/transcricoes/**/*.md")
+            mimetypes:
+              type: array
+              description: List of MIME types to match
+              items:
+                type: string
+            tags:
+              type: array
+              description: Custom tags for matching
+              items:
+                type: string
+          anyOf:
+            - required: [path_glob]
+            - required: [mimetypes]
+
+        steps:
+          type: array
+          description: Processing steps to execute
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+                enum: [normalize_text, chunk_text, embed_chunks, generate_artifacts]
+              params:
+                type: object
+                description: Step-specific parameters
+                additionalProperties: true
+            required: [name]
+
+        reprocess_policy:
+          type: string
+          enum: [changed_input, always, manual_only]
+          default: changed_input
+          description: When to reprocess files
+
+        enabled:
+          type: boolean
+          default: true
+          description: Whether this rule is active
+
+      required: [name, matchers, steps]
+
+  default_project:
+    type: string
+    description: Default project for unmatched files
+    default: "general"
+
+required: [rules]
+
+# Example configuration:
+# rules:
+#   - name: "meeting_transcriptions"
+#     matchers:
+#       path_glob: "ingest/transcricoes/**/*.md"
+#       mimetypes: ["text/markdown"]
+#     steps:
+#       - name: "normalize_text"
+#       - name: "chunk_text"
+#         params:
+#           chunk_size: 1200
+#           chunk_overlap: 200
+#       - name: "embed_chunks"
+#         params:
+#           embedding_model: "sentence-transformers/all-MiniLM-L6-v2"
+#       - name: "generate_artifacts"
+#         params:
+#           artifacts:
+#             - kind: "summary"
+#               prompt_template: "summarize_meeting"
+#             - kind: "decisions_index"
+#               prompt_template: "extract_decisions"
+#     reprocess_policy: "changed_input"
+#     enabled: true

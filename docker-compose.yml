@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  meethub:
+    build: .
+    container_name: meethub-worker
+    restart: unless-stopped
+    volumes:
+      - ./service-account.json:/app/service-account.json:ro
+      - ./classification_rules.json:/app/classification_rules.json:ro
+      - ./project_folders.json:/app/project_folders.json:ro
+      - ./data:/app/data
+      - ./logs:/app/logs
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=sqlite:////app/data/meethub.db
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s

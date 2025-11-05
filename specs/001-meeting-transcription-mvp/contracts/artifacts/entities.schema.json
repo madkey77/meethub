@@ -1,0 +1,61 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Entities Index Artifact Schema",
+  "description": "Index of named entities (people, organizations, projects) extracted from documents",
+  "type": "object",
+  "properties": {
+    "entities": {
+      "type": "array",
+      "description": "List of identified entities",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Entity name"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["person", "organization", "project", "location", "product", "technology"],
+            "description": "Entity type"
+          },
+          "mentions": {
+            "type": "integer",
+            "description": "Number of times mentioned",
+            "minimum": 1
+          },
+          "contexts": {
+            "type": "array",
+            "description": "Excerpts where entity appears",
+            "items": {
+              "type": "object",
+              "properties": {
+                "text": { "type": "string" },
+                "source_location": { "type": "string" }
+              }
+            }
+          },
+          "aliases": {
+            "type": "array",
+            "description": "Alternative names or references",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": ["name", "type", "mentions"]
+      }
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "source_files": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": ["entities", "generated_at", "source_files"]
+}

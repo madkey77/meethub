@@ -1,0 +1,38 @@
+You are analyzing the following {source_type} content to extract decisions made.
+
+Content:
+{content}
+
+Additional metadata (if available):
+{metadata}
+
+Instructions:
+1. Identify all explicit decisions made in the content
+2. For each decision, identify WHO made it (decisor), WHAT was decided, and WHY (justification)
+3. If timestamps or speaker labels are available, include them
+4. Only include clear, actionable decisions (not general discussions)
+5. Respond ONLY with valid JSON (no markdown, no explanations)
+
+Required JSON format:
+{{
+  "decisions": [
+    {{
+      "decisor": "Alice Johnson",
+      "decision": "We will use PostgreSQL for production database",
+      "justification": "Better performance for our use case and team has experience with it",
+      "timestamp": "00:15:30"
+    }},
+    {{
+      "decisor": "Bob Smith",
+      "decision": "Launch date postponed to Q1 2025",
+      "justification": "Need more time for testing and client requirements changed",
+      "timestamp": "00:23:45"
+    }}
+  ]
+}}
+
+Notes:
+- If no clear decisor is identified, use "Team" or "Group"
+- If no timestamp is available in the content, omit the "timestamp" field
+- If no justification is provided, use "Not specified"
+- If no decisions are found, return an empty array

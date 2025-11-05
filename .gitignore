@@ -1,0 +1,98 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment Variables
+.env
+.env.local
+.env.*.local
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+logs/
+
+# Temporary Files
+tmp/
+temp/
+*.tmp
+
+# Google Service Account & OAuth Credentials
+service-account.json
+*-credentials.json
+credentials.json
+token.json
+*-token.json
+
+# Test Coverage
+.coverage
+.pytest_cache/
+htmlcov/
+.tox/
+.nox/
+
+# Audio Files (temporary)
+*.mp3
+*.wav
+*.m4a
+*.ogg
+*.flac
+
+# Classification Rules (if containing sensitive data)
+# classification_rules.json
+# project_folders.json
+
+# Alembic
+# alembic/versions/*.py  # Uncomment if migrations should not be committed
+
+# MyPy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Ruff
+.ruff_cache/
+
+# NEW: RAG & Document Processing
+data/chroma_db/
+data/uploads/
+data/artifacts/
+*.pdf
+*.docx
+*.doc

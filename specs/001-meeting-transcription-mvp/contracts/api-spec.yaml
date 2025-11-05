@@ -1,0 +1,2179 @@
+openapi: 3.0.3
+info:
+  title: RAG-Enhanced Meeting Intelligence System API
+  description: |
+    FastAPI REST API for the RAG-Enhanced Meeting Intelligence System.
+
+    This system extends existing Google Meet transcription infrastructure with RAG capabilities,
+    supporting multi-source file ingestion (meeting transcripts, PDFs, DOCX, JSON, markdown),
+    dual-provider LLM integration (OpenAI, Anthropic) with user-selectable configuration, declarative artifact generation,
+    and intelligent RAG chat with citations.
+
+    **Key Features**:
+    - File upload and ingestion with automatic processing
+    - Job tracking with detailed step-by-step logs
+    - Artifact querying (summaries, decisions, entities, timelines)
+    - RAG chat with speaker-aware citations for meetings
+    - Backfill operations for historical data processing
+    - Health checks and system status
+  version: 1.0.0
+  contact:
+    name: API Support
+    email: support@meethub.local
+
+servers:
+  - url: http://localhost:8000
+    description: Local development server
+  - url: http://localhost:8000/api/v1
+    description: API v1 base path
+
+security:
+  - oauth2: []
+  - apiKey: []
+
+tags:
+  - name: System
+    description: Health checks and system status endpoints
+  - name: Files
+    description: File ingestion and management (FR-008 to FR-014)
+  - name: Jobs
+    description: Job tracking and monitoring (FR-031 to FR-038, FR-043 to FR-049)
+  - name: Artifacts
+    description: Artifact querying and retrieval (FR-046 to FR-052)
+  - name: Chat
+    description: RAG chat and query endpoints (FR-053 to FR-063)
+  - name: Backfill
+    description: Bulk reprocessing operations (FR-064 to FR-069)
+  - name: Projects
+    description: Project management endpoints
+  - name: Rules
+    description: Processing rules management
+
+paths:
+  # ============================================================================
+  # SYSTEM ENDPOINTS (Health, Status)
+  # ============================================================================
+
+  /health:
+    get:
+      summary: Health check endpoint
+      description: |
+        Check system health and availability of critical dependencies.
+        Maps to FR-055 (health checks for critical dependencies).
+      tags: [System]
+      operationId: getHealth
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: "healthy"
+                uptime_seconds: 3600
+                database_connected: true
+                chromadb_reachable: true
+                llm_providers:
+                  openai: "available"
+                  anthropic: "available"
+                disk_space_gb: 245.8
+        '503':
+          description: Service unhealthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "ServiceUnavailable"
+                message: "ChromaDB connection failed"
+                details: { "chromadb_reachable": false }
+
+  /api/v1/status:
+    get:
+      summary: Get system status and metrics
+      description: |
+        Retrieve overall system status including job statistics, storage usage, and processing metrics.
+        Related to FR-054 (track and display job metrics).
+      tags: [System]
+      operationId: getSystemStatus
+      responses:
+        '200':
+          description: System status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemStatus'
+
+  # ============================================================================
+  # FILE INGESTION ENDPOINTS (FR-008 to FR-014)
+  # ============================================================================
+
+  /api/v1/files/upload:
+    post:
+      summary: Upload file for ingestion
+      description: |
+        Upload a file for RAG ingestion. Supports multiple file types: markdown, PDF, DOCX, JSON, plain text.
+        Maps to FR-008 (calculate SHA-256 hash), FR-009 (create File and FileVersion entities).
+
+        **User Stories**: US1 (Manual File Ingestion), US6 (Backfill)
+        **Functional Requirements**: FR-008, FR-009, FR-010, FR-011
+      tags: [Files]
+      operationId: uploadFile
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/FileUploadRequest'
+      responses:
+        '202':
+          description: File queued for processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileUploadResponse'
+              example:
+                file_id: 123
+                file_version_id: 456
+                job_run_id: 789
+                status: "queued"
+                message: "File queued for ingestion"
+        '400':
+          description: Invalid file or parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                unsupportedFileType:
+                  value:
+                    error: "UnsupportedFileType"
+                    message: "File type .exe is not supported"
+                    details: { "supported_types": ["md", "pdf", "docx", "json", "txt"] }
+                fileTooBig:
+                  value:
+                    error: "FileTooLarge"
+                    message: "File size exceeds 100MB limit"
+                    details: { "file_size_mb": 125.4, "max_size_mb": 100 }
+        '409':
+          description: Duplicate file (identical SHA-256 hash already exists)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "DuplicateFile"
+                message: "File with identical content already exists"
+                details:
+                  existing_file_id: 123
+                  existing_file_version_id: 456
+                  content_hash: "a1b2c3..."
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/files:
+    get:
+      summary: List files with filtering
+      description: |
+        List ingested files with optional filters.
+        Maps to data management and file tracking (FR-070 to FR-074).
+
+        **Functional Requirements**: FR-070 (soft delete), FR-071 (version history)
+      tags: [Files]
+      operationId: listFiles
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdQuery'
+        - name: source_type
+          in: query
+          schema:
+            $ref: '#/components/schemas/FileSourceType'
+        - name: mime_type
+          in: query
+          schema:
+            type: string
+            example: "application/pdf"
+        - name: deleted
+          in: query
+          description: Include deleted files
+          schema:
+            type: boolean
+            default: false
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: File list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/files/{file_id}:
+    get:
+      summary: Get file details with version history
+      description: |
+        Retrieve file details including all versions and associated artifacts.
+        Maps to FR-071 (maintain file version history).
+
+        **User Stories**: US7 (Change Detection & Incremental Updates)
+      tags: [Files]
+      operationId: getFileById
+      parameters:
+        - $ref: '#/components/parameters/FileId'
+      responses:
+        '200':
+          description: File details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileDetail'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    delete:
+      summary: Soft delete file
+      description: |
+        Mark file as deleted (soft delete). File and versions retained but excluded from queries.
+        Maps to FR-070 (implement soft delete).
+
+        **Functional Requirements**: FR-070
+      tags: [Files]
+      operationId: deleteFile
+      parameters:
+        - $ref: '#/components/parameters/FileId'
+        - name: hard_delete
+          in: query
+          description: Permanently delete file and all related data (use with caution)
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: File deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "File soft deleted successfully"
+                  file_id:
+                    type: integer
+                  deleted:
+                    type: boolean
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/files/{file_id}/versions:
+    get:
+      summary: Get file version history
+      description: |
+        Retrieve all versions of a file with hashes and timestamps.
+        Maps to FR-071 (maintain file version history).
+      tags: [Files]
+      operationId: getFileVersions
+      parameters:
+        - $ref: '#/components/parameters/FileId'
+      responses:
+        '200':
+          description: File versions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  file_id:
+                    type: integer
+                  versions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FileVersion'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/files/{file_id}/reprocess:
+    post:
+      summary: Trigger file reprocessing
+      description: |
+        Force reprocessing of file through RAG pipeline (re-chunk, re-embed, regenerate artifacts).
+        Useful after rule changes or to retry failed processing.
+
+        **User Stories**: US7 (Incremental Updates)
+      tags: [Files]
+      operationId: reprocessFile
+      parameters:
+        - $ref: '#/components/parameters/FileId'
+      responses:
+        '202':
+          description: Reprocessing queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job_run_id:
+                    type: integer
+                  status:
+                    type: string
+                    example: "queued"
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ============================================================================
+  # JOB TRACKING ENDPOINTS (FR-043 to FR-049)
+  # ============================================================================
+
+  /api/v1/jobs:
+    get:
+      summary: List job runs with filtering
+      description: |
+        List pipeline execution jobs with filters for status, project, date range.
+        Maps to FR-049 (provide job status API endpoints).
+
+        **User Stories**: US4 (Pipeline Execution Tracking & Observability)
+        **Functional Requirements**: FR-049, FR-051, FR-052
+      tags: [Jobs]
+      operationId: listJobs
+      parameters:
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/JobRunStatus'
+        - $ref: '#/components/parameters/ProjectIdQuery'
+        - name: pipeline_name
+          in: query
+          schema:
+            type: string
+        - name: start_date
+          in: query
+          description: Filter jobs started after this date (ISO 8601)
+          schema:
+            type: string
+            format: date-time
+        - name: end_date
+          in: query
+          description: Filter jobs started before this date (ISO 8601)
+          schema:
+            type: string
+            format: date-time
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Job list with pagination
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobListResponse'
+              example:
+                jobs:
+                  - job_id: 789
+                    pipeline_name: "meeting-rag-ingestion"
+                    status: "success"
+                    started_at: "2025-11-04T14:30:00Z"
+                    completed_at: "2025-11-04T14:32:15Z"
+                    metrics:
+                      chunks_created: 150
+                      embeddings_generated: 150
+                      artifacts_produced: 3
+                      llm_cost_estimate: 0.15
+                total: 245
+                limit: 50
+                offset: 0
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/jobs/{job_id}:
+    get:
+      summary: Get job details with steps and artifacts
+      description: |
+        Retrieve detailed job information including all pipeline steps, logs, and generated artifacts.
+        Maps to FR-052 (provide job detail view).
+
+        **User Stories**: US4 (Pipeline Execution Tracking & Observability)
+        **Functional Requirements**: FR-052, FR-053
+      tags: [Jobs]
+      operationId: getJobById
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: Job details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobDetail'
+              example:
+                job_id: 789
+                pipeline_name: "meeting-rag-ingestion"
+                status: "success"
+                input_file_version_id: 456
+                started_at: "2025-11-04T14:30:00Z"
+                completed_at: "2025-11-04T14:32:15Z"
+                metrics:
+                  chunks_created: 150
+                  embeddings_generated: 150
+                  artifacts_produced: 3
+                  duration_seconds: 135
+                  llm_tokens_used: 4500
+                  llm_cost_estimate: 0.15
+                steps:
+                  - step_id: 1
+                    step_name: "normalize"
+                    status: "success"
+                    started_at: "2025-11-04T14:30:01Z"
+                    completed_at: "2025-11-04T14:30:05Z"
+                  - step_id: 2
+                    step_name: "chunk"
+                    status: "success"
+                    started_at: "2025-11-04T14:30:05Z"
+                    completed_at: "2025-11-04T14:30:20Z"
+                artifacts:
+                  - artifact_key: "summary:project-alpha:meeting-123"
+                    artifact_kind: "summary"
+                    version_id: 10
+                    created_at: "2025-11-04T14:32:10Z"
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/jobs/{job_id}/retry:
+    post:
+      summary: Retry failed job
+      description: |
+        Retry a failed or partial job. Can optionally retry specific steps only.
+        Maps to FR-046 (implement retry logic).
+
+        **User Stories**: US4 (Pipeline Execution Tracking & Observability)
+      tags: [Jobs]
+      operationId: retryJob
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                retry_steps:
+                  type: array
+                  items:
+                    type: string
+                  description: Specific steps to retry (empty = retry all failed steps)
+                  example: ["generate_summary", "generate_decisions"]
+                switch_provider:
+                  type: string
+                  description: Switch to alternative LLM provider for retry
+                  example: "anthropic"
+      responses:
+        '202':
+          description: Retry queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  new_job_id:
+                    type: integer
+                  status:
+                    type: string
+                    example: "queued"
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '400':
+          description: Job not retryable (e.g., already succeeded)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/jobs/{job_id}/steps/{step_id}/logs:
+    get:
+      summary: Get detailed logs for job step
+      description: |
+        Retrieve structured logs for a specific pipeline step.
+        Maps to FR-050 (log all operations using structured JSON).
+      tags: [Jobs]
+      operationId: getJobStepLogs
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+        - name: step_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Step logs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobStepLogs'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ============================================================================
+  # ARTIFACT ENDPOINTS (FR-046 to FR-052)
+  # ============================================================================
+
+  /api/v1/artifacts:
+    get:
+      summary: Query artifacts by key or filters
+      description: |
+        Search artifacts using filters: artifact key, kind, project, date range.
+        Maps to FR-038 (expose artifacts via unique keys).
+
+        **User Stories**: US3 (Declarative Artifact Generation)
+        **Functional Requirements**: FR-038, FR-051
+      tags: [Artifacts]
+      operationId: listArtifacts
+      parameters:
+        - name: artifact_key
+          in: query
+          description: Exact artifact key match (e.g., "summary:project-alpha:meeting-123")
+          schema:
+            type: string
+        - name: kind
+          in: query
+          description: Artifact type filter
+          schema:
+            $ref: '#/components/schemas/ArtifactKind'
+        - $ref: '#/components/parameters/ProjectIdQuery'
+        - name: created_after
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: created_before
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Artifact list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArtifactListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/artifacts/{artifact_id}:
+    get:
+      summary: Get artifact details with version history
+      description: |
+        Retrieve artifact details including all versions and source file links.
+        Maps to FR-035 (version artifacts).
+      tags: [Artifacts]
+      operationId: getArtifactById
+      parameters:
+        - name: artifact_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Artifact details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArtifactDetail'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/artifacts/{artifact_id}/versions/{version_id}/content:
+    get:
+      summary: Get artifact version content
+      description: |
+        Retrieve the actual content of an artifact version (JSON, markdown, or text).
+        Maps to FR-053 (link artifacts to content).
+      tags: [Artifacts]
+      operationId: getArtifactVersionContent
+      parameters:
+        - name: artifact_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: version_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: format
+          in: query
+          description: Response format
+          schema:
+            type: string
+            enum: [json, markdown, text]
+            default: json
+      responses:
+        '200':
+          description: Artifact content
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Artifact content structure (varies by artifact kind)
+              examples:
+                summary:
+                  value:
+                    title: "Weekly Standup Summary"
+                    key_points:
+                      - "Team decided to use Kubernetes for deployment"
+                      - "Alice raised concerns about database performance"
+                    participants: ["Alice", "Bob", "Carol"]
+                    meeting_date: "2025-11-04"
+                decisions:
+                  value:
+                    decisions:
+                      - decisor: "Alice Smith"
+                        decision: "Use Kubernetes for container orchestration"
+                        date: "2025-11-04"
+                        justification: "Better scalability and ecosystem support"
+                        confidence: "high"
+            text/markdown:
+              schema:
+                type: string
+            text/plain:
+              schema:
+                type: string
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/artifacts/by-key/{artifact_key}:
+    get:
+      summary: Get artifact by unique key
+      description: |
+        Retrieve artifact using its composite key (format: {kind}:{project}:{identifier}).
+        Maps to FR-038 (expose artifacts via unique keys).
+
+        **Example**: `summary:project-alpha:meeting-123`
+      tags: [Artifacts]
+      operationId: getArtifactByKey
+      parameters:
+        - name: artifact_key
+          in: path
+          required: true
+          description: Composite artifact key in format {kind}:{project}:{identifier}
+          schema:
+            type: string
+          example: "summary:project-alpha:meeting-123"
+        - name: version
+          in: query
+          description: Specific version (default = current)
+          schema:
+            type: string
+            enum: [current, latest, all]
+            default: current
+      responses:
+        '200':
+          description: Artifact details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArtifactDetail'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ============================================================================
+  # CHAT / RAG QUERY ENDPOINTS (FR-053 to FR-063)
+  # ============================================================================
+
+  /api/v1/chat/query:
+    post:
+      summary: Submit RAG chat query
+      description: |
+        Submit natural language query for RAG retrieval and answer generation with citations.
+        Maps to FR-056 to FR-063 (RAG & retrieval functionality).
+
+        **User Stories**: US5 (Intelligent RAG Chat with Citations)
+        **Functional Requirements**: FR-056, FR-057, FR-058, FR-059, FR-060, FR-061, FR-062, FR-063
+
+        **Flow**:
+        1. Query → embedding (same model as indexed content)
+        2. ChromaDB retrieval (top-K similar chunks, cosine similarity)
+        3. Context assembly with source metadata (speaker, timestamp, file path)
+        4. LLM answer generation with citations
+        5. Response with clickable citations (meetings: speaker+timestamp, docs: file+page)
+      tags: [Chat]
+      operationId: submitChatQuery
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatQueryRequest'
+            example:
+              query: "Who decided to use Kubernetes for deployment, and what does the architecture document say about scalability?"
+              project_id: "project-alpha"
+              top_k: 10
+              min_similarity: 0.6
+              llm_provider: "openai"
+              llm_model: "gpt-4o"
+      responses:
+        '200':
+          description: Chat response with citations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatResponse'
+              example:
+                answer: "According to Alice in the standup on 2025-11-01 at 14:32, the team decided to use Kubernetes for deployment. The decision is also documented in architecture.pdf page 12, which states that Kubernetes provides better scalability for microservices."
+                citations:
+                  - source_type: "meeting"
+                    file_path: "meeting://meeting-123"
+                    speaker: "Alice Smith"
+                    timestamp: "00:14:32"
+                    similarity_score: 0.89
+                    chunk_text: "I think we should use Kubernetes for deployment because it gives us better scalability..."
+                  - source_type: "document"
+                    file_path: "/ingest/project-alpha/architecture.pdf"
+                    page: 12
+                    section: "Deployment Architecture"
+                    similarity_score: 0.87
+                    chunk_text: "Kubernetes provides horizontal scaling capabilities essential for our microservices..."
+                retrieval_metadata:
+                  chunks_retrieved: 10
+                  avg_similarity: 0.78
+                  max_similarity: 0.89
+                  llm_provider: "openai"
+                  llm_model: "gpt-4o"
+                  tokens_used: 3200
+                  cost_estimate: 0.08
+        '400':
+          description: Invalid query or parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "NoRelevantContent"
+                message: "I don't have information about that in the indexed content. Try rephrasing your question or check if relevant meetings/documents have been uploaded."
+                details:
+                  max_similarity: 0.42
+                  min_threshold: 0.6
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/chat/conversations:
+    get:
+      summary: List chat conversation history
+      description: |
+        Retrieve chat conversation history for tracking and context.
+        Future enhancement for maintaining conversation context across queries.
+      tags: [Chat]
+      operationId: listConversations
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdQuery'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Conversation list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  conversations:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        conversation_id:
+                          type: string
+                        project_id:
+                          type: integer
+                        query_count:
+                          type: integer
+                        last_query_at:
+                          type: string
+                          format: date-time
+                  total:
+                    type: integer
+
+  # ============================================================================
+  # BACKFILL ENDPOINTS (FR-064 to FR-069)
+  # ============================================================================
+
+  /api/v1/backfill:
+    post:
+      summary: Trigger backfill job for folder or file list
+      description: |
+        Start bulk reprocessing operation for historical files.
+        Maps to FR-064 to FR-069 (backfill & reprocessing).
+
+        **User Stories**: US6 (Backfill for Historical Data)
+        **Functional Requirements**: FR-064, FR-065, FR-066, FR-067
+      tags: [Backfill]
+      operationId: createBackfillJob
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BackfillRequest'
+            examples:
+              folderBackfill:
+                value:
+                  target_path: "/ingest/historical_meetings/"
+                  project_id: "project-alpha"
+                  recursive: true
+                  file_pattern: "*.md"
+              fileListBackfill:
+                value:
+                  file_list:
+                    - "/ingest/project-alpha/meeting-001.md"
+                    - "/ingest/project-alpha/meeting-002.md"
+                  project_id: "project-alpha"
+      responses:
+        '202':
+          description: Backfill job started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BackfillResponse'
+              example:
+                backfill_job_id: 42
+                total_file_count: 200
+                status: "queued"
+                estimated_duration_minutes: 134
+        '400':
+          description: Invalid backfill parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    get:
+      summary: List backfill jobs
+      description: List all backfill operations with status filtering.
+      tags: [Backfill]
+      operationId: listBackfillJobs
+      parameters:
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/BackfillStatus'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Backfill job list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  backfill_jobs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/BackfillJob'
+                  total:
+                    type: integer
+
+  /api/v1/backfill/{backfill_job_id}:
+    get:
+      summary: Get backfill job details and progress
+      description: |
+        Retrieve detailed backfill status with real-time progress.
+        Maps to FR-067 (provide backfill progress tracking).
+      tags: [Backfill]
+      operationId: getBackfillJobById
+      parameters:
+        - name: backfill_job_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Backfill job details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BackfillJobDetail'
+              example:
+                backfill_job_id: 42
+                target_folder_path: "/ingest/historical_meetings/"
+                total_file_count: 200
+                processed_count: 87
+                failed_count: 3
+                status: "running"
+                progress_percentage: 43.5
+                estimated_completion_time: "2025-11-04T16:45:00Z"
+                started_at: "2025-11-04T14:30:00Z"
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/backfill/{backfill_job_id}/pause:
+    post:
+      summary: Pause backfill job
+      description: |
+        Pause running backfill. Current jobs complete, queued jobs remain paused.
+        Maps to FR-068 (support backfill control: pause).
+      tags: [Backfill]
+      operationId: pauseBackfillJob
+      parameters:
+        - name: backfill_job_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Backfill paused
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  backfill_job_id:
+                    type: integer
+                  status:
+                    type: string
+                    example: "paused"
+                  processed_count:
+                    type: integer
+                  remaining_count:
+                    type: integer
+        '400':
+          description: Cannot pause (e.g., already completed)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/backfill/{backfill_job_id}/resume:
+    post:
+      summary: Resume paused backfill job
+      description: |
+        Resume paused backfill from where it stopped.
+        Maps to FR-068 (support backfill control: resume).
+      tags: [Backfill]
+      operationId: resumeBackfillJob
+      parameters:
+        - name: backfill_job_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Backfill resumed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  backfill_job_id:
+                    type: integer
+                  status:
+                    type: string
+                    example: "running"
+                  remaining_count:
+                    type: integer
+
+  /api/v1/backfill/{backfill_job_id}/cancel:
+    post:
+      summary: Cancel backfill job
+      description: |
+        Cancel backfill. Current jobs complete, remaining jobs skipped.
+        Maps to FR-068 (support backfill control: cancel).
+      tags: [Backfill]
+      operationId: cancelBackfillJob
+      parameters:
+        - name: backfill_job_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Backfill cancelled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  backfill_job_id:
+                    type: integer
+                  status:
+                    type: string
+                    example: "cancelled"
+                  processed_count:
+                    type: integer
+                  skipped_count:
+                    type: integer
+
+  /api/v1/backfill/{backfill_job_id}/summary:
+    get:
+      summary: Get backfill summary report
+      description: |
+        Retrieve final summary report after backfill completion.
+        Maps to FR-069 (generate backfill summary report).
+      tags: [Backfill]
+      operationId: getBackfillSummary
+      parameters:
+        - name: backfill_job_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: format
+          in: query
+          description: Report format
+          schema:
+            type: string
+            enum: [json, csv]
+            default: json
+      responses:
+        '200':
+          description: Backfill summary report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BackfillSummary'
+            text/csv:
+              schema:
+                type: string
+                description: CSV export of failed files with error reasons
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ============================================================================
+  # PROJECT ENDPOINTS
+  # ============================================================================
+
+  /api/v1/projects:
+    get:
+      summary: List projects
+      description: Retrieve all projects with configuration.
+      tags: [Projects]
+      operationId: listProjects
+      responses:
+        '200':
+          description: Project list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  projects:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Project'
+
+    post:
+      summary: Create new project
+      description: Create a new project with ingestion configuration.
+      tags: [Projects]
+      operationId: createProject
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectCreateRequest'
+      responses:
+        '201':
+          description: Project created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+
+  /api/v1/projects/{project_id}:
+    get:
+      summary: Get project details
+      description: Retrieve project configuration and statistics.
+      tags: [Projects]
+      operationId: getProjectById
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Project details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectDetail'
+
+  # ============================================================================
+  # RULES MANAGEMENT ENDPOINTS
+  # ============================================================================
+
+  /api/v1/rules:
+    get:
+      summary: Get current processing rules
+      description: |
+        Retrieve current rules.yaml configuration.
+        Maps to FR-029 (load processing rules from YAML).
+      tags: [Rules]
+      operationId: getCurrentRules
+      responses:
+        '200':
+          description: Processing rules
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rules:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ProcessingRule'
+                  loaded_at:
+                    type: string
+                    format: date-time
+
+  /api/v1/rules/reload:
+    post:
+      summary: Reload processing rules from YAML
+      description: |
+        Trigger reload of rules.yaml configuration without system restart.
+        Maps to FR-029 (load rules with syntax validation).
+      tags: [Rules]
+      operationId: reloadRules
+      responses:
+        '200':
+          description: Rules reloaded successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Rules reloaded successfully"
+                  rules_count:
+                    type: integer
+                  loaded_at:
+                    type: string
+                    format: date-time
+        '400':
+          description: Rules validation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "RulesValidationError"
+                message: "YAML syntax error at line 45"
+                details:
+                  line: 45
+                  error_type: "YAMLSyntaxError"
+
+  /api/v1/rules/validate:
+    post:
+      summary: Validate rules without applying
+      description: Test rules.yaml syntax and dependencies before reload.
+      tags: [Rules]
+      operationId: validateRules
+      requestBody:
+        required: true
+        content:
+          application/yaml:
+            schema:
+              type: string
+      responses:
+        '200':
+          description: Rules are valid
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  valid:
+                    type: boolean
+                  rules_count:
+                    type: integer
+                  warnings:
+                    type: array
+                    items:
+                      type: string
+        '400':
+          description: Validation errors
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+# ==============================================================================
+# COMPONENTS
+# ==============================================================================
+
+components:
+  securitySchemes:
+    oauth2:
+      type: oauth2
+      description: Google OAuth2 authentication (existing google_auth.py flow)
+      flows:
+        authorizationCode:
+          authorizationUrl: https://accounts.google.com/o/oauth2/v2/auth
+          tokenUrl: https://oauth2.googleapis.com/token
+          scopes:
+            openid: OpenID Connect
+            email: User email address
+            profile: User profile information
+
+    apiKey:
+      type: apiKey
+      description: API key authentication (future extension)
+      name: X-API-Key
+      in: header
+
+  parameters:
+    FileId:
+      name: file_id
+      in: path
+      required: true
+      schema:
+        type: integer
+      description: Unique file identifier
+
+    JobId:
+      name: job_id
+      in: path
+      required: true
+      schema:
+        type: integer
+      description: Unique job run identifier
+
+    ProjectIdQuery:
+      name: project_id
+      in: query
+      schema:
+        type: integer
+      description: Filter by project ID
+
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        default: 50
+        minimum: 1
+        maximum: 200
+      description: Maximum number of results to return
+
+    Offset:
+      name: offset
+      in: query
+      schema:
+        type: integer
+        default: 0
+        minimum: 0
+      description: Number of results to skip (pagination)
+
+  responses:
+    Unauthorized:
+      description: Authentication required or invalid credentials
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "Unauthorized"
+            message: "Valid authentication credentials required"
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "NotFound"
+            message: "Resource not found"
+
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "InternalServerError"
+            message: "An unexpected error occurred"
+            details:
+              traceback: "..."
+
+  schemas:
+    # ========================================================================
+    # ENUMS
+    # ========================================================================
+
+    FileSourceType:
+      type: string
+      enum:
+        - meeting
+        - uploaded_document
+        - chat_export
+      description: |
+        Source classification for files:
+        - `meeting`: File created from meeting transcript bridge
+        - `uploaded_document`: Manually uploaded file
+        - `chat_export`: Chat backup (Slack, Teams, WhatsApp)
+
+    JobRunStatus:
+      type: string
+      enum:
+        - queued
+        - running
+        - success
+        - failed
+        - partial
+      description: |
+        Job execution status:
+        - `queued`: Job waiting to start
+        - `running`: Job in progress
+        - `success`: All steps completed successfully
+        - `failed`: Critical step failed (file validation, chunking, embedding)
+        - `partial`: Non-critical steps failed (some artifacts failed, embeddings succeeded)
+
+    JobStepStatus:
+      type: string
+      enum:
+        - pending
+        - running
+        - success
+        - failed
+
+    ArtifactKind:
+      type: string
+      enum:
+        - summary
+        - decisions_index
+        - entities_index
+        - timeline
+        - action_items
+        - custom
+      description: Artifact type classification
+
+    BackfillStatus:
+      type: string
+      enum:
+        - queued
+        - running
+        - paused
+        - completed
+        - cancelled
+
+    LinkRoleType:
+      type: string
+      enum:
+        - source
+        - derived
+        - reference
+      description: |
+        Artifact-File relationship type:
+        - `source`: Primary input file
+        - `derived`: Contributing file (multi-file artifacts)
+        - `reference`: Cited but not directly used
+
+    # ========================================================================
+    # REQUEST SCHEMAS
+    # ========================================================================
+
+    FileUploadRequest:
+      type: object
+      required:
+        - file
+      properties:
+        file:
+          type: string
+          format: binary
+          description: File to upload (max 100MB)
+        project_id:
+          type: integer
+          description: Target project ID (uses default if not specified)
+        force_reprocess:
+          type: boolean
+          default: false
+          description: Force reprocessing even if identical hash exists
+
+    ChatQueryRequest:
+      type: object
+      required:
+        - query
+      properties:
+        query:
+          type: string
+          minLength: 3
+          maxLength: 2000
+          description: Natural language query
+          example: "Who decided to use Kubernetes?"
+        project_id:
+          type: integer
+          description: Filter retrieval to specific project
+        top_k:
+          type: integer
+          default: 10
+          minimum: 1
+          maximum: 50
+          description: Number of chunks to retrieve
+        min_similarity:
+          type: number
+          format: float
+          default: 0.6
+          minimum: 0.0
+          maximum: 1.0
+          description: Minimum similarity threshold (return "no info" if below)
+        llm_provider:
+          type: string
+          enum: [openai, anthropic]
+          description: LLM provider for answer generation (uses LLM_PROVIDER_PREFERENCE if not specified)
+        llm_model:
+          type: string
+          description: Specific model name (e.g., "gpt-4o", "claude-3-5-sonnet")
+        experimental_mode:
+          type: boolean
+          default: false
+          description: Enable multi-provider comparison (generates answers from all configured providers)
+
+    BackfillRequest:
+      type: object
+      properties:
+        target_path:
+          type: string
+          description: Folder path for recursive scan (required if file_list not provided)
+          example: "/ingest/historical_meetings/"
+        file_list:
+          type: array
+          items:
+            type: string
+          description: Explicit list of file paths (required if target_path not provided)
+        project_id:
+          type: integer
+          description: Project ID for all files in backfill
+        recursive:
+          type: boolean
+          default: true
+          description: Recursive directory scan (for target_path)
+        file_pattern:
+          type: string
+          description: Glob pattern for file filtering (e.g., "*.md", "*.pdf")
+          example: "*.md"
+      oneOf:
+        - required: [target_path]
+        - required: [file_list]
+
+    ProjectCreateRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: Project name (used for classification)
+        display_name:
+          type: string
+          description: Human-readable project name
+        description:
+          type: string
+          description: Project description
+        ingestion_folder_path:
+          type: string
+          description: Local filesystem path for document ingestion
+        artifact_retention_days:
+          type: integer
+          minimum: 1
+          description: Artifact retention policy in days (null = indefinite)
+        metadata:
+          type: object
+          additionalProperties: true
+          description: Custom metadata (team, client, domain tags)
+
+    # ========================================================================
+    # RESPONSE SCHEMAS
+    # ========================================================================
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+        - message
+      properties:
+        error:
+          type: string
+          description: Error code/type
+          example: "ValidationError"
+        message:
+          type: string
+          description: Human-readable error message
+          example: "File type not supported"
+        details:
+          type: object
+          additionalProperties: true
+          description: Additional error context
+
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - uptime_seconds
+        - database_connected
+        - chromadb_reachable
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded, unhealthy]
+        uptime_seconds:
+          type: integer
+        database_connected:
+          type: boolean
+        chromadb_reachable:
+          type: boolean
+        llm_providers:
+          type: object
+          additionalProperties:
+            type: string
+            enum: [available, unavailable, quota_exceeded]
+          description: Status of each configured LLM provider
+          example:
+            openai: "available"
+            anthropic: "available"
+        disk_space_gb:
+          type: number
+          format: float
+          description: Available disk space in GB
+
+    SystemStatus:
+      type: object
+      properties:
+        total_jobs:
+          type: integer
+        jobs_by_status:
+          type: object
+          additionalProperties:
+            type: integer
+          example:
+            queued: 5
+            running: 3
+            success: 245
+            failed: 12
+        total_files:
+          type: integer
+        total_artifacts:
+          type: integer
+        storage_usage_gb:
+          type: number
+          format: float
+        avg_processing_time_seconds:
+          type: number
+          format: float
+        total_llm_cost:
+          type: number
+          format: float
+
+    FileUploadResponse:
+      type: object
+      required:
+        - file_id
+        - file_version_id
+        - status
+      properties:
+        file_id:
+          type: integer
+        file_version_id:
+          type: integer
+        job_run_id:
+          type: integer
+          description: Job ID for tracking processing
+        status:
+          type: string
+          enum: [queued, duplicate_skipped]
+        message:
+          type: string
+
+    FileListResponse:
+      type: object
+      properties:
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/File'
+        total:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+
+    File:
+      type: object
+      properties:
+        file_id:
+          type: integer
+        relative_path:
+          type: string
+        mime_type:
+          type: string
+        source_type:
+          $ref: '#/components/schemas/FileSourceType'
+        project_id:
+          type: integer
+        deleted:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        current_version:
+          $ref: '#/components/schemas/FileVersion'
+
+    FileVersion:
+      type: object
+      properties:
+        version_id:
+          type: integer
+        file_id:
+          type: integer
+        content_hash:
+          type: string
+          description: SHA-256 hash (hex string)
+          example: "a1b2c3d4e5f6..."
+        file_size_bytes:
+          type: integer
+        content_locator:
+          type: string
+          description: Storage location (file path or archive)
+        is_current:
+          type: boolean
+        discovered_at:
+          type: string
+          format: date-time
+
+    FileDetail:
+      allOf:
+        - $ref: '#/components/schemas/File'
+        - type: object
+          properties:
+            versions:
+              type: array
+              items:
+                $ref: '#/components/schemas/FileVersion'
+            chunk_count:
+              type: integer
+            embedding_generated_at:
+              type: string
+              format: date-time
+            artifacts:
+              type: array
+              items:
+                type: object
+                properties:
+                  artifact_key:
+                    type: string
+                  artifact_kind:
+                    type: string
+                  version_id:
+                    type: integer
+
+    JobListResponse:
+      type: object
+      properties:
+        jobs:
+          type: array
+          items:
+            $ref: '#/components/schemas/JobRun'
+        total:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+
+    JobRun:
+      type: object
+      properties:
+        job_id:
+          type: integer
+        pipeline_name:
+          type: string
+        status:
+          $ref: '#/components/schemas/JobRunStatus'
+        input_file_version_id:
+          type: integer
+        backfill_job_id:
+          type: integer
+        retry_count:
+          type: integer
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+        metrics:
+          type: object
+          properties:
+            chunks_created:
+              type: integer
+            embeddings_generated:
+              type: integer
+            artifacts_produced:
+              type: integer
+            duration_seconds:
+              type: number
+              format: float
+            llm_tokens_used:
+              type: integer
+            llm_cost_estimate:
+              type: number
+              format: float
+
+    JobDetail:
+      allOf:
+        - $ref: '#/components/schemas/JobRun'
+        - type: object
+          properties:
+            steps:
+              type: array
+              items:
+                $ref: '#/components/schemas/JobStep'
+            artifacts:
+              type: array
+              items:
+                type: object
+                properties:
+                  artifact_key:
+                    type: string
+                  artifact_kind:
+                    type: string
+                  version_id:
+                    type: integer
+                  created_at:
+                    type: string
+                    format: date-time
+
+    JobStep:
+      type: object
+      properties:
+        step_id:
+          type: integer
+        job_run_id:
+          type: integer
+        step_name:
+          type: string
+          example: "chunk"
+        status:
+          $ref: '#/components/schemas/JobStepStatus'
+        error_message:
+          type: string
+        error_type:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+
+    JobStepLogs:
+      type: object
+      properties:
+        step_id:
+          type: integer
+        step_name:
+          type: string
+        log_output:
+          type: object
+          properties:
+            entries:
+              type: array
+              items:
+                type: object
+                properties:
+                  timestamp:
+                    type: string
+                    format: date-time
+                  level:
+                    type: string
+                    enum: [DEBUG, INFO, WARN, ERROR]
+                  message:
+                    type: string
+                  context:
+                    type: object
+                    additionalProperties: true
+
+    ArtifactListResponse:
+      type: object
+      properties:
+        artifacts:
+          type: array
+          items:
+            $ref: '#/components/schemas/Artifact'
+        total:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+
+    Artifact:
+      type: object
+      properties:
+        artifact_id:
+          type: integer
+        artifact_key:
+          type: string
+          description: Composite key format {kind}:{project}:{identifier}
+          example: "summary:project-alpha:meeting-123"
+        artifact_kind:
+          $ref: '#/components/schemas/ArtifactKind'
+        project_id:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        current_version:
+          $ref: '#/components/schemas/ArtifactVersion'
+
+    ArtifactVersion:
+      type: object
+      properties:
+        version_id:
+          type: integer
+        artifact_id:
+          type: integer
+        job_run_id:
+          type: integer
+        content_locator:
+          type: string
+        content_hash:
+          type: string
+        is_current:
+          type: boolean
+        metadata:
+          type: object
+          properties:
+            schema_version:
+              type: string
+            llm_provider:
+              type: string
+            llm_model:
+              type: string
+            prompt_template:
+              type: string
+            prompt_tokens:
+              type: integer
+            completion_tokens:
+              type: integer
+            total_tokens:
+              type: integer
+            cost_estimate:
+              type: number
+              format: float
+            generation_timestamp:
+              type: string
+              format: date-time
+        created_at:
+          type: string
+          format: date-time
+
+    ArtifactDetail:
+      allOf:
+        - $ref: '#/components/schemas/Artifact'
+        - type: object
+          properties:
+            versions:
+              type: array
+              items:
+                $ref: '#/components/schemas/ArtifactVersion'
+            source_files:
+              type: array
+              items:
+                type: object
+                properties:
+                  file_id:
+                    type: integer
+                  file_version_id:
+                    type: integer
+                  relative_path:
+                    type: string
+                  role_type:
+                    $ref: '#/components/schemas/LinkRoleType'
+                  contribution_weight:
+                    type: number
+                    format: float
+
+    ChatResponse:
+      type: object
+      required:
+        - answer
+        - citations
+      properties:
+        answer:
+          type: string
+          description: LLM-generated answer grounded in retrieved context
+        citations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Citation'
+        retrieval_metadata:
+          type: object
+          properties:
+            chunks_retrieved:
+              type: integer
+            avg_similarity:
+              type: number
+              format: float
+            max_similarity:
+              type: number
+              format: float
+            min_similarity:
+              type: number
+              format: float
+            llm_provider:
+              type: string
+            llm_model:
+              type: string
+            tokens_used:
+              type: integer
+            cost_estimate:
+              type: number
+              format: float
+
+    Citation:
+      type: object
+      required:
+        - source_type
+        - file_path
+        - similarity_score
+      properties:
+        citation_id:
+          type: string
+          description: Unique citation identifier for linking
+        source_type:
+          type: string
+          enum: [meeting, document, chat_export]
+        file_path:
+          type: string
+          description: File path (meeting:// URI for meetings)
+        chunk_index:
+          type: integer
+        similarity_score:
+          type: number
+          format: float
+        chunk_text:
+          type: string
+          description: Excerpt from chunk for context
+        # Meeting-specific fields
+        speaker:
+          type: string
+          description: Speaker name or label (meetings only)
+        speaker_name:
+          type: string
+          description: Resolved speaker name (if mapping available)
+        timestamp:
+          type: string
+          description: Timestamp in meeting (HH:MM:SS format)
+          example: "00:14:32"
+        # Document-specific fields
+        page:
+          type: integer
+          description: Page number (documents only)
+        section:
+          type: string
+          description: Section heading or number (documents only)
+        # Chat export-specific fields
+        message_sender:
+          type: string
+          description: Message sender (chat exports only)
+        message_timestamp:
+          type: string
+          format: date-time
+          description: Message timestamp (chat exports only)
+
+    BackfillResponse:
+      type: object
+      properties:
+        backfill_job_id:
+          type: integer
+        total_file_count:
+          type: integer
+        status:
+          $ref: '#/components/schemas/BackfillStatus'
+        estimated_duration_minutes:
+          type: integer
+
+    BackfillJob:
+      type: object
+      properties:
+        backfill_job_id:
+          type: integer
+        target_folder_path:
+          type: string
+        total_file_count:
+          type: integer
+        processed_count:
+          type: integer
+        failed_count:
+          type: integer
+        status:
+          $ref: '#/components/schemas/BackfillStatus'
+        progress_percentage:
+          type: number
+          format: float
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+
+    BackfillJobDetail:
+      allOf:
+        - $ref: '#/components/schemas/BackfillJob'
+        - type: object
+          properties:
+            estimated_completion_time:
+              type: string
+              format: date-time
+            current_processing_rate:
+              type: number
+              format: float
+              description: Files per minute
+            paused_at:
+              type: string
+              format: date-time
+            resumed_at:
+              type: string
+              format: date-time
+
+    BackfillSummary:
+      type: object
+      properties:
+        backfill_job_id:
+          type: integer
+        status:
+          $ref: '#/components/schemas/BackfillStatus'
+        success_count:
+          type: integer
+        failure_count:
+          type: integer
+        artifacts_generated:
+          type: object
+          additionalProperties:
+            type: integer
+          description: Artifact counts by kind
+          example:
+            summary: 195
+            decisions_index: 195
+            entities_index: 190
+        total_duration_seconds:
+          type: integer
+        average_duration_per_file_seconds:
+          type: number
+          format: float
+        total_llm_cost:
+          type: number
+          format: float
+        failed_files:
+          type: array
+          items:
+            type: object
+            properties:
+              file_path:
+                type: string
+              error_reason:
+                type: string
+              error_type:
+                type: string
+
+    Project:
+      type: object
+      properties:
+        project_id:
+          type: integer
+        name:
+          type: string
+        display_name:
+          type: string
+        description:
+          type: string
+        ingestion_folder_path:
+          type: string
+        artifact_retention_days:
+          type: integer
+        metadata:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+
+    ProjectDetail:
+      allOf:
+        - $ref: '#/components/schemas/Project'
+        - type: object
+          properties:
+            file_count:
+              type: integer
+            artifact_count:
+              type: integer
+            storage_usage_gb:
+              type: number
+              format: float
+
+    ProcessingRule:
+      type: object
+      properties:
+        rule_name:
+          type: string
+        match_criteria:
+          type: object
+          properties:
+            path_glob:
+              type: string
+            mime_types:
+              type: array
+              items:
+                type: string
+            project_tags:
+              type: array
+              items:
+                type: string
+        processing_steps:
+          type: array
+          items:
+            type: object
+        reprocess_policy:
+          type: string
+          enum: [changed_input, always, manual_only]
+        enabled:
+          type: boolean
